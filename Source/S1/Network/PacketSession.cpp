@@ -2,6 +2,11 @@
 
 
 #include "Network/PacketSession.h"
+#include "NetworkWorker.h"
+#include "Sockets.h"
+#include "Common/TcpSocketBuilder.h"
+#include "Serialization/ArrayWriter.h"
+#include "SocketSubsystem.h"
 
 PacketSession::PacketSession(FSocket* Socket) : Socket(Socket)
 {
@@ -14,7 +19,20 @@ PacketSession::~PacketSession()
 
 void PacketSession::Run()
 {
+	RecvWorkerThread = MakeShared<RecvWorker>(Socket, AsShared());
+}
 
+void PacketSession::HandleRecvPackets()
+{
+	while (true)
+	{
+		TArray<uint8> Packet;
+		if (RecvPacketQueue.Dequeue(OUT Packet) == false)
+			break;
+
+		// TODO
+		//ServerPacketHandler::HandlePacket();
+	}
 }
 
 void PacketSession::Disconnect()

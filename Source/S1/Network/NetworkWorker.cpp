@@ -105,3 +105,74 @@ bool RecvWorker::ReceiveDesiredBytes(uint8* Results, int32 Size)
 
 	return true;
 }
+
+// SendWorker
+SendWorker::SendWorker(FSocket* Socket, TSharedPtr<PacketSession> Session) : Socket(Socket), SessionRef(Session)
+{
+	Thread = FRunnableThread::Create(this, TEXT("SendWorkerThread"));
+}
+
+SendWorker::~SendWorker()
+{
+
+}
+
+bool SendWorker::Init()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Send Thread Init")));
+
+	return true;
+}
+
+uint32 SendWorker::Run()
+{
+	while (Running)
+	{
+		SendBufferRef SendBuffer;
+
+		if (TSharedPtr<PacketSession> Session = SessionRef.Pin())
+		{
+			if (Session->SendPacketQueue.Dequeue(OUT SendBuffer))
+			{
+				SendPacket(SendBuffer);
+			}
+		}
+
+		// Sleep?
+	}
+
+	return 0;
+}
+
+void SendWorker::Exit()
+{
+
+}
+
+bool SendWorker::SendPacket(SendBufferRef SendBuffer)
+{
+	if (SendDesiredBytes(SendBuffer->Buffer(), SendBuffer->WriteSize()) == false)
+		return false;
+
+	return true;
+}
+
+void SendWorker::Destroy()
+{
+	Running = false;
+}
+
+bool SendWorker::SendDesiredBytes(const uint8* Buffer, int32 Size)
+{
+	while (Size > 0)
+	{
+		int32 BytesSent = 0;
+		if (Socket->Send(Buffer, Size, BytesSent) == false)
+			return false;
+
+		Size -= BytesSent;
+		Buffer += BytesSent;
+	}
+
+	return true;
+}

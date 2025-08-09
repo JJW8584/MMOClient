@@ -54,3 +54,11 @@ void US1GameInstance::HandleRecvPackets()
 
 	GameServerSession->HandleRecvPackets();
 }
+
+void US1GameInstance::SendPacket(SendBufferRef SendBuffer)
+{
+	if (Socket == nullptr || GameServerSession == nullptr)
+		return;
+
+	GameServerSession->SendPacket(SendBuffer);
+}

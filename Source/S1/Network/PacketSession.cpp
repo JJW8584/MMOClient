@@ -7,9 +7,11 @@
 #include "Common/TcpSocketBuilder.h"
 #include "Serialization/ArrayWriter.h"
 #include "SocketSubsystem.h"
+#include "ServerPacketHandler.h"
 
 PacketSession::PacketSession(FSocket* Socket) : Socket(Socket)
 {
+	ServerPacketHandler::Init();
 }
 
 PacketSession::~PacketSession()
@@ -20,6 +22,7 @@ PacketSession::~PacketSession()
 void PacketSession::Run()
 {
 	RecvWorkerThread = MakeShared<RecvWorker>(Socket, AsShared());
+	SendWorkerThread = MakeShared<SendWorker>(Socket, AsShared());
 }
 
 void PacketSession::HandleRecvPackets()
@@ -30,8 +33,8 @@ void PacketSession::HandleRecvPackets()
 		if (RecvPacketQueue.Dequeue(OUT Packet) == false)
 			break;
 
-		// TODO
-		//ServerPacketHandler::HandlePacket();
+		PacketSessionRef ThisPtr = AsShared();
+		ServerPacketHandler::HandlePacket(ThisPtr, Packet.GetData(), Packet.Num());
 	}
 }
 

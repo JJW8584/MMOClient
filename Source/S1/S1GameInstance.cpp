@@ -1,12 +1,15 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
+#include "S1.h"
 #include "S1GameInstance.h"
 #include "Sockets.h"
 #include "Common/TcpSocketBuilder.h"
 #include "Serialization/ArrayWriter.h"
 #include "SocketSubsystem.h"
 #include "PacketSession.h"
+#include "Protocol.pb.h"
+#include "ServerPacketHandler.h"
 
 void US1GameInstance::ConnectToGameServer()
 {
@@ -30,6 +33,13 @@ void US1GameInstance::ConnectToGameServer()
 		//Session
 		GameServerSession = MakeShared<PacketSession>(Socket);
 		GameServerSession->Run();
+
+		//TEMP : Lobby에서 캐릭터 선택창
+		{
+			Protocol::C_LOGIN Pkt;
+			SendBufferRef SendBuffer = ServerPacketHandler::MakeSendBuffer(Pkt);
+			SendPacket(SendBuffer);
+		}
 	}
 	else
 	{

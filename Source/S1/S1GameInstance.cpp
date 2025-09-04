@@ -1,8 +1,9 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "S1.h"
+
 #include "S1GameInstance.h"
+#include "S1.h"
 #include "Sockets.h"
 #include "Common/TcpSocketBuilder.h"
 #include "Serialization/ArrayWriter.h"
@@ -10,6 +11,7 @@
 #include "PacketSession.h"
 #include "Protocol.pb.h"
 #include "ServerPacketHandler.h"
+#include "S1MyPlayer.h"
 
 void US1GameInstance::ConnectToGameServer()
 {
@@ -79,7 +81,7 @@ void US1GameInstance::SendPacket(SendBufferRef SendBuffer)
 	GameServerSession->SendPacket(SendBuffer);
 }
 
-void US1GameInstance::HandleSpawn(const Protocol::PlayerInfo& PlayerInfo)
+void US1GameInstance::HandleSpawn(const Protocol::PlayerInfo& PlayerInfo, bool IsMine)
 {
 	if (Socket == nullptr || GameServerSession == nullptr)
 		return;
@@ -94,21 +96,35 @@ void US1GameInstance::HandleSpawn(const Protocol::PlayerInfo& PlayerInfo)
 		return;
 
 	FVector SpawnLocation(PlayerInfo.x(), PlayerInfo.y(), PlayerInfo.z());
-	AActor* Actor = World->SpawnActor(PlayerClass, &SpawnLocation);
 
-	Players.Add(PlayerInfo.object_id(), Actor);
+	if (IsMine)
+	{
+		auto* PC = UGameplayStatics::GetPlayerController(this, 0);
+		AS1Player* Player = Cast<AS1Player>(PC->GetPawn());
+		if (Player == nullptr)
+			return;
+
+		MyPlayer = Player;
+		Players.Add(PlayerInfo.object_id(), Player);
+	}
+	else
+	{
+		AS1Player* Actor = Cast<AS1Player>(World->SpawnActor(OtherPlayerClass, &SpawnLocation));
+
+		Players.Add(PlayerInfo.object_id(), Actor);
+	}
 }
 
 void US1GameInstance::HandleSpawn(const Protocol::S_ENTER_GAME& EnterGamePkt)
 {
-	HandleSpawn(EnterGamePkt.player());
+	HandleSpawn(EnterGamePkt.player(), true);
 }
 
 void US1GameInstance::HandleSpawn(const Protocol::S_SPAWN& SpawnPkt)
 {
 	for (auto& Player : SpawnPkt.players())
 	{
-		HandleSpawn(Player);
+		HandleSpawn(Player, false);
 	}
 }
 
@@ -121,7 +137,7 @@ void US1GameInstance::HandleDespawn(uint64 ObjectId)
 	if (World == nullptr)
 		return;
 
-	AActor** FindActor = Players.Find(ObjectId);
+	AS1Player** FindActor = Players.Find(ObjectId);
 	if (FindActor == nullptr)
 		return;
 

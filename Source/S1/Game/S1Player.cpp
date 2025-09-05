@@ -11,6 +11,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
+#include "S1MyPlayer.h"
 
 AS1Player::AS1Player()
 {
@@ -35,4 +36,43 @@ AS1Player::AS1Player()
 	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
 	GetCharacterMovement()->BrakingDecelerationFalling = 1500.0f;
 
+	PlayerInfo = new Protocol::PlayerInfo();
+}
+
+AS1Player::~AS1Player()
+{
+	delete PlayerInfo;
+
+	PlayerInfo = nullptr;
+}
+
+void AS1Player::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	{
+		FVector Location = GetActorLocation();
+		PlayerInfo->set_x(Location.X);
+		PlayerInfo->set_y(Location.Y);
+		PlayerInfo->set_z(Location.Z);
+		PlayerInfo->set_yaw(GetControlRotation().Yaw);
+	}
+}
+
+bool AS1Player::IsMyPlayer()
+{
+	return Cast<AS1MyPlayer>(this) != nullptr;
+}
+
+void AS1Player::SetPlayerInfo(const Protocol::PlayerInfo& Info)
+{
+	if (PlayerInfo->object_id() != 0)
+	{
+		assert(PlayerInfo->object_id() == Info.object_id());
+	}
+
+	PlayerInfo->CopyFrom(Info);
+
+	FVector Location(Info.x(), Info.y(), Info.z());
+	SetActorLocation(Location);
 }

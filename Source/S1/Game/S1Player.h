@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
+#include "Protocol.pb.h"
 #include "S1Player.generated.h"
 
 UCLASS()
@@ -14,5 +15,19 @@ class S1_API AS1Player : public ACharacter
 
 public:
 	AS1Player();
+	~AS1Player();
 
+protected:
+	virtual void Tick(float DeltaSeconds) override;
+
+public:
+	bool IsMyPlayer();
+
+public:
+	void SetPlayerInfo(const Protocol::PlayerInfo& Info);
+	Protocol::PlayerInfo* GetPlayerInfo() { return PlayerInfo; }
+
+
+protected:
+	class Protocol::PlayerInfo* PlayerInfo; // 현재 위치
 };

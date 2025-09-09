@@ -36,14 +36,33 @@ AS1Player::AS1Player()
 	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
 	GetCharacterMovement()->BrakingDecelerationFalling = 1500.0f;
 
+	GetCharacterMovement()->bRunPhysicsWithNoController = true;
+
 	PlayerInfo = new Protocol::PlayerInfo();
+	DestInfo = new Protocol::PlayerInfo();
 }
 
 AS1Player::~AS1Player()
 {
 	delete PlayerInfo;
+	delete DestInfo;
 
 	PlayerInfo = nullptr;
+	DestInfo = nullptr;
+}
+
+void AS1Player::BeginPlay()
+{
+	Super::BeginPlay();
+
+	{
+		FVector Location = GetActorLocation();
+		DestInfo->set_x(Location.X);
+		DestInfo->set_y(Location.Y);
+		DestInfo->set_z(Location.Z);
+		DestInfo->set_yaw(GetControlRotation().Yaw);
+
+	}
 }
 
 void AS1Player::Tick(float DeltaSeconds)
@@ -57,11 +76,48 @@ void AS1Player::Tick(float DeltaSeconds)
 		PlayerInfo->set_z(Location.Z);
 		PlayerInfo->set_yaw(GetControlRotation().Yaw);
 	}
+
+	if (IsMyPlayer() == false)
+	{
+		/*FVector Location = GetActorLocation();
+		FVector DestLocation = FVector(DestInfo->x(), DestInfo->y(), DestInfo->z());
+
+		FVector MoveDir = (DestLocation - Location);
+		const float DistToDest = MoveDir.Length();
+		MoveDir.Normalize();
+
+		float MoveDist = (MoveDir * 600.f * DeltaSeconds).Length();
+		MoveDist = FMath::Min(DistToDest, MoveDist);
+		FVector NextLocation = Location + MoveDir * MoveDist;
+		
+		SetActorLocation(NextLocation);*/
+
+		const Protocol::MoveState State = PlayerInfo->state();
+		if (State == Protocol::MOVE_STATE_RUN)
+		{
+			SetActorRotation(FRotator(0, DestInfo->yaw(), 0));
+			AddMovementInput(GetActorForwardVector());
+		}
+		else
+		{
+
+		}
+	}
 }
 
 bool AS1Player::IsMyPlayer()
 {
 	return Cast<AS1MyPlayer>(this) != nullptr;
+}
+
+void AS1Player::SetMoveState(Protocol::MoveState State)
+{
+	if (PlayerInfo->state() == State)
+		return;
+
+	PlayerInfo->set_state(State);
+
+	// TODO
 }
 
 void AS1Player::SetPlayerInfo(const Protocol::PlayerInfo& Info)
@@ -75,4 +131,18 @@ void AS1Player::SetPlayerInfo(const Protocol::PlayerInfo& Info)
 
 	FVector Location(Info.x(), Info.y(), Info.z());
 	SetActorLocation(Location);
+}
+
+void AS1Player::SetDestInfo(const Protocol::PlayerInfo& Info)
+{
+	if (PlayerInfo->object_id() != 0)
+	{
+		assert(PlayerInfo->object_id() == Info.object_id());
+	}
+
+	// Dest에 최종 상태 복사
+	DestInfo->CopyFrom(Info);
+
+	// 상태 적용
+	SetMoveState(Info.state());
 }

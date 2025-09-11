@@ -112,6 +112,10 @@ void US1GameInstance::HandleSpawn(const Protocol::PlayerInfo& PlayerInfo, bool I
 	else
 	{
 		AS1Player* Player = Cast<AS1Player>(World->SpawnActor(OtherPlayerClass, &SpawnLocation));
+		
+		if (Player == nullptr)
+			return;
+
 		Player->SetPlayerInfo(PlayerInfo);
 		Players.Add(PlayerInfo.object_id(), Player);
 	}

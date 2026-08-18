@@ -10,7 +10,6 @@
 #include "GameFramework/Controller.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
-#include "InputActionValue.h"
 #include "S1.h"
 #include "Kismet/KismetMathLibrary.h"
 
@@ -30,8 +29,6 @@ AS1MyPlayer::AS1MyPlayer()
 
 	// Note: For faster iteration times these variables, and many more, can be tweaked in the Character Blueprint
 	// instead of recompiling to adjust them
-	GetCharacterMovement()->JumpZVelocity = 700.f;
-	GetCharacterMovement()->AirControl = 0.35f;
 	GetCharacterMovement()->MaxWalkSpeed = 500.f;
 	GetCharacterMovement()->MinAnalogWalkSpeed = 20.f;
 	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
@@ -41,7 +38,8 @@ AS1MyPlayer::AS1MyPlayer()
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->TargetArmLength = 400.0f; // The camera follows at this distance behind the character	
-	CameraBoom->bUsePawnControlRotation = true; // Rotate the arm based on the controller
+	CameraBoom->bUsePawnControlRotation = false; // Rotate the arm based on the controller
+	CameraBoom->SetRelativeRotation(FRotator(-45.f, -45.f, 0.f));
 
 	// Create a follow camera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
@@ -74,16 +72,9 @@ void AS1MyPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	// Set up action bindings
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent)) {
 
-		// Jumping
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
-
 		// Moving
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AS1MyPlayer::Move);
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Completed, this, &AS1MyPlayer::Move);
-
-		// Looking
-		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AS1MyPlayer::Look);
 	}
 }
 
@@ -104,7 +95,7 @@ void AS1MyPlayer::Tick(float DeltaTime)
 	if (DesiredInput == FVector2D::Zero())
 		SetMoveState(Protocol::MOVE_STATE_IDLE);
 	else
-		SetMoveState(Protocol::MOVE_STATE_RUN);
+		SetMoveState(Protocol::MOVE_STATE_MOVE);
 
 	MovePacketSendTimer -= DeltaTime;
 
@@ -113,10 +104,9 @@ void AS1MyPlayer::Tick(float DeltaTime)
 		MovePacketSendTimer = MOVE_PACKET_SEND_DELAY;
 
 		Protocol::C_MOVE MovePkt;
-		
 		//현재 위치 정보
 		{
-			Protocol::PlayerInfo* Info = MovePkt.mutable_info();
+			Protocol::MoveInfo* Info = MovePkt.mutable_move_info();
 			Info->CopyFrom(*PlayerInfo);
 			Info->set_yaw(DesiredYaw);
 		}
@@ -159,18 +149,5 @@ void AS1MyPlayer::Move(const FInputActionValue& Value)
 			FRotator Rotator = UKismetMathLibrary::FindLookAtRotation(Location, Location + DesiredMoveDirection);
 			DesiredYaw = Rotator.Yaw;
 		}
-	}
-}
-
-void AS1MyPlayer::Look(const FInputActionValue& Value)
-{
-	// input is a Vector2D
-	FVector2D LookAxisVector = Value.Get<FVector2D>();
-
-	if (Controller != nullptr)
-	{
-		// add yaw and pitch input to controller
-		AddControllerYawInput(LookAxisVector.X);
-		AddControllerPitchInput(LookAxisVector.Y);
 	}
 }

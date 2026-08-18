@@ -9,9 +9,81 @@
 #include "S1GameInstance.generated.h"
 
 class AS1Player;
-/**
- *
- */
+
+UENUM(BlueprintType)
+enum class ERoomTeam : uint8
+{
+	None,
+	Red,
+	Blue
+};
+
+USTRUCT(BlueprintType)
+struct FRoomPlayerItem
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly)
+	int64 ObjectId = 0;
+
+	UPROPERTY(BlueprintReadOnly)
+	ERoomTeam Team = ERoomTeam::None;
+
+	UPROPERTY(BlueprintReadOnly)
+	bool Ready = false;
+};
+
+USTRUCT(BlueprintType)
+struct FRoomListItem
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	int64 RoomId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	FString RoomName;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	int32 CurrentPlayerCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	int32 MaxPlayerCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	int64 HostObjectId = 0;
+};
+
+USTRUCT(BlueprintType)
+struct FCurrentRoomState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	int64 RoomId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	FString RoomName;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	int32 CurrentPlayerCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	int32 MaxPlayerCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	int64 HostObjectId = 0;
+
+	UPROPERTY(BlueprintReadOnly)
+	TArray<FRoomPlayerItem> Players;
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRoomListUpdated);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnCreateRoomResult, bool, bSuccess);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEnterRoomResult, bool, bSuccess);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRoomStateUpdated);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnLeaveRoomResult, bool, bSuccess);
+
 UCLASS()
 class S1_API US1GameInstance : public UGameInstance
 {
@@ -19,7 +91,7 @@ class S1_API US1GameInstance : public UGameInstance
 
 public:
 	UFUNCTION(BlueprintCallable)
-	void ConnectToGameServer();
+	bool ConnectToGameServer();
 
 	UFUNCTION(BlueprintCallable)
 	void DisconnectFromGameServer();
@@ -29,22 +101,114 @@ public:
 
 	void SendPacket(SendBufferRef SendBuffer);
 
+	uint64 GetLocalObjectId() const
+	{
+		return LocalObjectId;
+	}
+
+	void SetLocalObjectId(uint64 InObjectId)
+	{
+		LocalObjectId = InObjectId;
+	}
+
 public:
-	void HandleSpawn(const Protocol::PlayerInfo& PlayerInfo, bool IsMine);
-	void HandleSpawn(const Protocol::S_ENTER_GAME& EnterGamePkt);
-	void HandleSpawn(const Protocol::S_SPAWN& SpawnPkt);
+	// Login
+	UFUNCTION(BlueprintCallable)
+	bool RequestLogin();
+
+
+	//---------
+	//	Lobby
+	//---------
+	
+	// 새로고침
+	UFUNCTION(BlueprintCallable)
+	bool RequestRefresh();
+
+	void HandleRoomList(const Protocol::S_ROOM_LIST& Pkt);
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	TArray<FRoomListItem> LobbyRooms;
+
+	UPROPERTY(BlueprintAssignable, Category = "Lobby")
+	FOnRoomListUpdated OnRoomListUpdated;
+
+	// 방 생성
+	UFUNCTION(BlueprintCallable)
+	bool RequestCreateRoom(const FString& RoomName, int32 MaxPlayerCount);
+	
+	void HandleCreateRoom(const Protocol::S_CREATE_ROOM& Pkt);
+
+	UPROPERTY(BlueprintReadOnly, Category = "Lobby")
+	FCurrentRoomState CurrentRoom;
+
+	UPROPERTY(BlueprintAssignable, Category = "Lobby")
+	FOnCreateRoomResult OnCreateRoomResult;
+
+	// 방 입장
+	UFUNCTION(BlueprintCallable)
+	bool RequestEnterRoom(int64 RoomId);
+
+	void HandleEnterRoom(const Protocol::S_ENTER_ROOM& Pkt);
+
+	UPROPERTY(BlueprintAssignable, Category = "Lobby")
+	FOnEnterRoomResult OnEnterRoomResult;
+
+	//--------
+	//	Room
+	//--------
+	void UpdateCurrentRoom(const Protocol::RoomInfo& Info);
+
+	void HandleRoomState(const Protocol::S_ROOM_STATE& Pkt);
+
+	UFUNCTION(BlueprintCallable)
+	bool RequestChangeTeam(ERoomTeam Team);
+
+	UFUNCTION(BlueprintCallable)
+	bool RequestReady(bool ready);
+
+	UPROPERTY(BlueprintAssignable, Category = "Room")
+	FOnRoomStateUpdated OnRoomStateUpdated;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Room")
+	bool bIsRoomHost = false;
+
+	// 방 나가기
+	UFUNCTION(BlueprintCallable)
+	bool RequestLeaveRoom();
+
+	void HandleLeaveRoom(Protocol::S_LEAVE_ROOM& pkt);
+
+	UPROPERTY(BlueprintAssignable, Category = "Room")
+	FOnLeaveRoomResult OnLeaveRoomResult;
+
+	// 게임 시작
+	UFUNCTION(BlueprintCallable)
+	bool RequestGameStart();
+
+	UFUNCTION(BlueprintCallable)
+	void PrepareMatch();
+
+public:
+	void HandlePrepareMatch(const Protocol::S_MATCH_PREPARE& Pkt);
+	void HandleSpawn(const Protocol::PlayerInfo& PlayerInfo);
 
 	void HandleDespawn(uint64 ObjectId);
-	void HandleDespawn(const Protocol::S_DESPAWN& DespawnPkt);
 
 	void HandleMove(const Protocol::S_MOVE& MovePkt);
 
 public:
 	// GameServer
-	class FSocket* Socket;
+	class FSocket* Socket = nullptr;
 	FString IpAddress = TEXT("127.0.0.1");
 	int16 Port = 7777;
 	TSharedPtr<class PacketSession> GameServerSession;
+
+public:
+	// 인게임
+	uint64 MatchId;
+	uint32 DurationSeconds;
+	Protocol::MatchInfo MatchInfo;
 
 public:
 	UPROPERTY(EditAnywhere)
@@ -52,4 +216,7 @@ public:
 
 	AS1Player* MyPlayer;
 	TMap<uint64, AS1Player*> Players;
+
+private:
+	uint64 LocalObjectId = 0;
 };

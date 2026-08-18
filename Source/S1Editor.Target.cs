@@ -8,8 +8,9 @@ public class S1EditorTarget : TargetRules
 	public S1EditorTarget( TargetInfo Target) : base(Target)
 	{
 		Type = TargetType.Editor;
-		DefaultBuildSettings = BuildSettingsVersion.V5;
-		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_5;
+		DefaultBuildSettings = BuildSettingsVersion.V7;
+		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_8;
+		WindowsPlatform.Compiler = WindowsCompiler.VisualStudio2026;
 		ExtraModuleNames.Add("S1");
 	}
 }

@@ -13,8 +13,169 @@
 #include "ServerPacketHandler.h"
 #include "S1MyPlayer.h"
 
-void US1GameInstance::ConnectToGameServer()
+bool US1GameInstance::RequestLogin()
 {
+	if (Socket == nullptr || !GameServerSession.IsValid())
+		return false;
+
+	//TEMP : Lobby?먯꽌 罹먮┃???좏깮李?
+	Protocol::C_LOGIN Pkt;
+	SEND_PACKET(Pkt);
+
+	return true;
+}
+
+bool US1GameInstance::RequestRefresh()
+{
+	if (Socket == nullptr || !GameServerSession.IsValid())
+		return false;
+
+	Protocol::C_ROOM_LIST Pkt;
+	SEND_PACKET(Pkt);
+
+	return true;
+}
+
+bool US1GameInstance::RequestCreateRoom(const FString& RoomName, int32 MaxPlayerCount)
+{
+	if (Socket == nullptr || !GameServerSession.IsValid())
+		return false;
+
+	const FString TrimmedName =
+		RoomName.TrimStartAndEnd();
+
+	if (TrimmedName.IsEmpty() || MaxPlayerCount <= 0)
+		return false;
+
+	Protocol::C_CREATE_ROOM Pkt;
+	Pkt.set_room_name(TCHAR_TO_UTF8(*TrimmedName));
+	Pkt.set_max_player_count(static_cast<uint32>(MaxPlayerCount));
+	SEND_PACKET(Pkt);
+
+	return true;
+}
+
+bool US1GameInstance::RequestEnterRoom(int64 RoomId)
+{
+	if (Socket == nullptr || !GameServerSession.IsValid())
+		return false;
+
+	if (RoomId <= 0)
+		return false;
+
+	Protocol::C_ENTER_ROOM Pkt;
+	Pkt.set_room_id(static_cast<uint64>(RoomId));
+	SEND_PACKET(Pkt);
+
+	return true;
+}
+
+void US1GameInstance::HandleEnterRoom(const Protocol::S_ENTER_ROOM& Pkt)
+{
+	if (!Pkt.success() || !Pkt.has_room_info())
+	{
+		OnEnterRoomResult.Broadcast(false);
+		return;
+	}
+
+	UpdateCurrentRoom(Pkt.room_info());
+
+	OnEnterRoomResult.Broadcast(true);
+}
+
+void US1GameInstance::UpdateCurrentRoom(const Protocol::RoomInfo& Info)
+{
+	CurrentRoom.RoomId = static_cast<int64>(Info.room_id());
+	CurrentRoom.RoomName = UTF8_TO_TCHAR(Info.room_name().c_str());
+	CurrentRoom.CurrentPlayerCount = Info.players_size();
+	CurrentRoom.MaxPlayerCount = static_cast<int32>(Info.max_player_count());
+	CurrentRoom.HostObjectId = static_cast<int64>(Info.host_object_id());
+
+	CurrentRoom.Players.Reset();
+
+	for (const Protocol::RoomPlayerInfo& Player : Info.players())
+	{
+		FRoomPlayerItem Item;
+		Item.ObjectId = static_cast<int64>(Player.object_id());
+		Item.Ready = Player.ready();
+		
+		switch (Player.team())
+		{
+		case Protocol::TEAM_BLUE:
+			Item.Team = ERoomTeam::Blue;
+			break;
+
+		case Protocol::TEAM_RED:
+			Item.Team = ERoomTeam::Red;
+			break;
+
+		default:
+			Item.Team = ERoomTeam::None;
+			break;
+		}
+		CurrentRoom.Players.Add(Item);
+	}
+}
+
+void US1GameInstance::HandleRoomState(const Protocol::S_ROOM_STATE& Pkt)
+{
+	if (!Pkt.has_room_info())
+		return;
+
+	UpdateCurrentRoom(Pkt.room_info());
+
+	OnRoomStateUpdated.Broadcast();
+}
+
+bool US1GameInstance::RequestChangeTeam(ERoomTeam Team)
+{
+	if (Socket == nullptr || !GameServerSession.IsValid())
+		return false;
+
+	Protocol::C_CHANGE_TEAM RoomChangePkt;
+
+	switch (Team)
+	{
+	case ERoomTeam::None:
+		RoomChangePkt.set_team(Protocol::TEAM_NONE);
+		break;
+	case ERoomTeam::Red:
+		RoomChangePkt.set_team(Protocol::TEAM_RED);
+		break;
+	case ERoomTeam::Blue:
+		RoomChangePkt.set_team(Protocol::TEAM_BLUE);
+		break;
+	default:
+		break;
+	}
+
+	SEND_PACKET(RoomChangePkt);
+
+	return true;
+}
+
+bool US1GameInstance::RequestReady(bool ready)
+{
+	if (Socket == nullptr || !GameServerSession.IsValid())
+		return false;
+
+	Protocol::C_READY ReadyPkt;
+
+	ReadyPkt.set_ready(ready);
+
+	SEND_PACKET(ReadyPkt);
+
+	return true;
+}
+
+bool US1GameInstance::ConnectToGameServer()
+{
+	if (Socket != nullptr)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Already connected to server")));
+		return true;
+	}
+
 	Socket = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateSocket(TEXT("Stream"), TEXT("Client Socket"));
 
 	FIPv4Address Ip;
@@ -36,16 +197,16 @@ void US1GameInstance::ConnectToGameServer()
 		GameServerSession = MakeShared<PacketSession>(Socket);
 		GameServerSession->Run();
 
-		//TEMP : Lobby에서 캐릭터 선택창
-		{
-			Protocol::C_LOGIN Pkt;
-			SendBufferRef SendBuffer = ServerPacketHandler::MakeSendBuffer(Pkt);
-			SendPacket(SendBuffer);
-		}
+		return true;
 	}
 	else
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("Connection Failed")));
+
+		ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(Socket);
+		Socket = nullptr;
+
+		return false;
 	}
 }
 
@@ -54,15 +215,15 @@ void US1GameInstance::DisconnectFromGameServer()
 	if (Socket == nullptr || GameServerSession == nullptr)
 		return;
 
-	Protocol::C_LEAVE_GAME LeavePkt;
+	Protocol::C_LEAVE_ROOM LeavePkt;
 	SEND_PACKET(LeavePkt);
 
-	/*if (Socket)
+	if (Socket)
 	{
 		ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get();
 		SocketSubsystem->DestroySocket(Socket);
 		Socket = nullptr;
-	}*/
+	}
 }
 
 void US1GameInstance::HandleRecvPackets()
@@ -81,21 +242,101 @@ void US1GameInstance::SendPacket(SendBufferRef SendBuffer)
 	GameServerSession->SendPacket(SendBuffer);
 }
 
-void US1GameInstance::HandleSpawn(const Protocol::PlayerInfo& PlayerInfo, bool IsMine)
+void US1GameInstance::HandleRoomList(const Protocol::S_ROOM_LIST& Pkt)
 {
-	if (Socket == nullptr || GameServerSession == nullptr)
+	LobbyRooms.Reset();
+
+	for (const Protocol::RoomInfo& Info : Pkt.rooms())
+	{
+		FRoomListItem Item;
+		Item.RoomId = static_cast<int64>(Info.room_id());
+		Item.RoomName =
+			UTF8_TO_TCHAR(Info.room_name().c_str());
+		Item.CurrentPlayerCount = Info.players_size();
+		Item.MaxPlayerCount =
+			static_cast<int32>(Info.max_player_count());
+		Item.HostObjectId =
+			static_cast<int64>(Info.host_object_id());
+
+		LobbyRooms.Add(Item);
+	}
+
+	OnRoomListUpdated.Broadcast();
+}
+
+void US1GameInstance::HandleCreateRoom(const Protocol::S_CREATE_ROOM& Pkt)
+{
+	if (!Pkt.success() || !Pkt.has_room_info())
+	{
+		OnCreateRoomResult.Broadcast(false);
+		return;
+	}
+
+	UpdateCurrentRoom(Pkt.room_info());
+
+	OnCreateRoomResult.Broadcast(true);
+}
+
+bool US1GameInstance::RequestLeaveRoom()
+{
+	if (Socket == nullptr || !GameServerSession.IsValid())
+		return false;
+
+	Protocol::C_LEAVE_ROOM Pkt;
+
+	SEND_PACKET(Pkt);
+
+	return true;
+}
+
+void US1GameInstance::HandleLeaveRoom(Protocol::S_LEAVE_ROOM& pkt)
+{
+	if (!pkt.success())
 		return;
 
-	auto* World = GetWorld();
-	if (World == nullptr)
+	CurrentRoom = FCurrentRoomState();
+
+	OnLeaveRoomResult.Broadcast(pkt.success());
+}
+
+bool US1GameInstance::RequestGameStart()
+{
+	if (Socket == nullptr || !GameServerSession.IsValid())
+		return false;
+
+	Protocol::C_START_MATCH Pkt;
+
+	SEND_PACKET(Pkt);
+
+	return true;
+}
+
+void US1GameInstance::PrepareMatch()
+{
+	Players.Reset();
+	MyPlayer = nullptr;
+
+	for (const Protocol::MatchPlayerInfo& MatchPlayerInfo : MatchInfo.match_players_info())
+	{
+		HandleSpawn(MatchPlayerInfo.player_info());
+	}
+}
+
+void US1GameInstance::HandlePrepareMatch(const Protocol::S_MATCH_PREPARE& Pkt)
+{
+	MatchId = Pkt.match_info().match_id();
+	DurationSeconds = Pkt.match_info().duration_seconds();
+	MatchInfo = Pkt.match_info();
+}
+
+void US1GameInstance::HandleSpawn(const Protocol::PlayerInfo& PlayerInfo)
+{
+	if (Socket == nullptr || !GameServerSession.IsValid())
 		return;
 
-	// 중복 처리 체크
-	const uint64 ObjectId = PlayerInfo.object_id();
-	if (Players.Find(ObjectId) != nullptr)
-		return;
+	bool IsMine = LocalObjectId == PlayerInfo.object_id();
 
-	FVector SpawnLocation(PlayerInfo.x(), PlayerInfo.y(), PlayerInfo.z());
+	FVector SpawnLocation(PlayerInfo.move_info().x(), PlayerInfo.move_info().y(), PlayerInfo.move_info().z());
 
 	if (IsMine)
 	{
@@ -104,33 +345,20 @@ void US1GameInstance::HandleSpawn(const Protocol::PlayerInfo& PlayerInfo, bool I
 		if (Player == nullptr)
 			return;
 
-		Player->SetPlayerInfo(PlayerInfo);
+		Player->SetMoveInfo(PlayerInfo.move_info());
 
 		MyPlayer = Player;
 		Players.Add(PlayerInfo.object_id(), Player);
 	}
 	else
 	{
-		AS1Player* Player = Cast<AS1Player>(World->SpawnActor(OtherPlayerClass, &SpawnLocation));
+		AS1Player* Player = Cast<AS1Player>(GWorld->SpawnActor(OtherPlayerClass, &SpawnLocation));
 		
 		if (Player == nullptr)
 			return;
 
-		Player->SetPlayerInfo(PlayerInfo);
+		Player->SetMoveInfo(PlayerInfo.move_info());
 		Players.Add(PlayerInfo.object_id(), Player);
-	}
-}
-
-void US1GameInstance::HandleSpawn(const Protocol::S_ENTER_GAME& EnterGamePkt)
-{
-	HandleSpawn(EnterGamePkt.player(), true);
-}
-
-void US1GameInstance::HandleSpawn(const Protocol::S_SPAWN& SpawnPkt)
-{
-	for (auto& Player : SpawnPkt.players())
-	{
-		HandleSpawn(Player, false);
 	}
 }
 
@@ -150,33 +378,25 @@ void US1GameInstance::HandleDespawn(uint64 ObjectId)
 	World->DestroyActor(*FindActor);
 }
 
-void US1GameInstance::HandleDespawn(const Protocol::S_DESPAWN& DespawnPkt)
-{
-	for (auto& ObjectId : DespawnPkt.object_ids())
-	{
-		HandleDespawn(ObjectId);
-	}
-}
-
 void US1GameInstance::HandleMove(const Protocol::S_MOVE& MovePkt)
 {
-	if (Socket == nullptr || GameServerSession == nullptr)
-		return;
+	//if (Socket == nullptr || GameServerSession == nullptr)
+	//	return;
 
-	auto* World = GetWorld();
-	if (World == nullptr)
-		return;
+	//auto* World = GetWorld();
+	//if (World == nullptr)
+	//	return;
 
-	const uint64 ObjectId = MovePkt.info().object_id();
-	AS1Player** FindActor = Players.Find(ObjectId);
-	if (FindActor == nullptr)
-		return;
+	//const uint64 ObjectId = MovePkt.info().object_id();
+	//AS1Player** FindActor = Players.Find(ObjectId);
+	//if (FindActor == nullptr)
+	//	return;
 
-	AS1Player* Player = (*FindActor);
-	if (Player->IsMyPlayer())
-		return;
+	//AS1Player* Player = (*FindActor);
+	//if (Player->IsMyPlayer())
+	//	return;
 
-	const Protocol::PlayerInfo& Info = MovePkt.info();
-	//Player->SetPlayerInfo(Info);
-	Player->SetDestInfo(Info);
+	//const Protocol::PlayerInfo& Info = MovePkt.info();
+	////Player->SetPlayerInfo(Info);
+	//Player->SetDestInfo(Info);
 }

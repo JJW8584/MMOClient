@@ -38,8 +38,8 @@ AS1Player::AS1Player()
 
 	GetCharacterMovement()->bRunPhysicsWithNoController = true;
 
-	PlayerInfo = new Protocol::PlayerInfo();
-	DestInfo = new Protocol::PlayerInfo();
+	PlayerInfo = new Protocol::MoveInfo();
+	DestInfo = new Protocol::MoveInfo();
 }
 
 AS1Player::~AS1Player()
@@ -93,7 +93,7 @@ void AS1Player::Tick(float DeltaSeconds)
 		SetActorLocation(NextLocation);*/
 
 		const Protocol::MoveState State = PlayerInfo->state();
-		if (State == Protocol::MOVE_STATE_RUN)
+		if (State == Protocol::MOVE_STATE_MOVE)
 		{
 			SetActorRotation(FRotator(0, DestInfo->yaw(), 0));
 			AddMovementInput(GetActorForwardVector());
@@ -120,26 +120,16 @@ void AS1Player::SetMoveState(Protocol::MoveState State)
 	// TODO
 }
 
-void AS1Player::SetPlayerInfo(const Protocol::PlayerInfo& Info)
+void AS1Player::SetMoveInfo(const Protocol::MoveInfo& Info)
 {
-	if (PlayerInfo->object_id() != 0)
-	{
-		assert(PlayerInfo->object_id() == Info.object_id());
-	}
-
 	PlayerInfo->CopyFrom(Info);
 
 	FVector Location(Info.x(), Info.y(), Info.z());
 	SetActorLocation(Location);
 }
 
-void AS1Player::SetDestInfo(const Protocol::PlayerInfo& Info)
+void AS1Player::SetDestInfo(const Protocol::MoveInfo& Info)
 {
-	if (PlayerInfo->object_id() != 0)
-	{
-		assert(PlayerInfo->object_id() == Info.object_id());
-	}
-
 	// Dest에 최종 상태 복사
 	DestInfo->CopyFrom(Info);
 
